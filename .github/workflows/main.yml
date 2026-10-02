@@ -1,0 +1,13 @@
+name: My First Workflow     # name of the workflow
+
+on:                         # When to run?
+  push:                     # Run when code is pushed.
+
+jobs:                       # What work should the workflow perform?
+  build:                    # job name
+    runs-on: ubuntu-latest  # Runner/machine where the job will run
+    steps:                  # Tasks to be performed in this job
+      - name: Hello         # Name of the step
+        run: echo "Hello GitHub Actions"   # Command to execute
+      
+
