@@ -1,13 +1,135 @@
-name: My First Workflow     # name of the workflow
+name: My-App-CI
 
-on:                         # When to run?
-  push:                     # Run when code is pushed.
+on:
+  push:
+    branches:
+      - main
 
-jobs:                       # What work should the workflow perform?
-  build:                    # job name
-    runs-on: ubuntu-latest  # Runner/machine where the job will run
-    steps:                  # Tasks to be performed in this job
-      - name: Hello         # Name of the step
-        run: echo "Hello GitHub Actions"   # Command to execute
-      
+  workflow_dispatch:
 
+
+env:
+  APP_NAME: My-App
+
+
+jobs:
+
+  # -------------------------
+  # 1. TEST
+  # -------------------------
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm install
+
+      - run: npm test
+
+
+  # -------------------------
+  # 2. BUILD
+  # -------------------------
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm install
+
+      - run: npm run build
+
+      # Save build output as artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-app-${{ github.run_number }}
+          path: dist/
+
+
+  # -------------------------
+  # 3. SONARQUBE
+  # -------------------------
+  sonarqube:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+
+  # -------------------------
+  # 4. DOCKER BUILD
+  # -------------------------
+  docker-build:
+    needs: sonarqube
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: docker build -t my-app:${{ github.run_number }} .
+
+
+  # -------------------------
+  # 5. TRIVY SCAN
+  # -------------------------
+  trivy:
+    needs: docker-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: docker build -t my-app:${{ github.run_number }} .
+
+      - name: Trivy Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: my-app:${{ github.run_number }}
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+
+  # -------------------------
+  # 6. PUSH IMAGE TO ECR
+  # -------------------------
+  push-ecr:
+    needs: trivy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker Image
+        run: docker build -t my-app:${{ github.run_number }} .
+
+      - name: Tag Image
+        run: |
+          docker tag my-app:${{ github.run_number }} \
+            <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/my-app:${{ github.run_number }}
+
+      - name: Push Image
+        run: |
+          docker push \
+            <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/my-app:${{ github.run_number }}
