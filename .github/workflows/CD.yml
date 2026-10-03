@@ -1,1 +1,37 @@
+name: My-App-CD
 
+on:
+  workflow_dispatch:
+
+jobs:
+
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment: production
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Update EKS Kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ap-south-1 \
+            --name eks-lab
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/my-app \
+            my-app=<AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/my-app:<IMAGE_TAG>
+
+      - name: Check Deployment
+        run: |
+          kubectl rollout status deployment/my-app
